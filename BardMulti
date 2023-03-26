@@ -1,0 +1,60 @@
+#include <ESP8266WiFi.h>
+#include <FastLED.h>
+#include <MSGEQ7.h>
+
+#define LED_COUNT 10
+#define LED_PIN 5
+
+#define FREQUENCIES 7
+
+#define LOW_FREQUENCY 63
+#define HIGH_FREQUENCY 2000
+
+#define COLORS 7
+
+#define RED 0x000000
+#define GREEN 0x00FF00
+#define BLUE 0x0000FF
+
+#define YELLOW 0x00FF00
+#define MAGENTA 0x00FF00
+#define WHITE 0xFFFFFF
+
+uint8_t leds[LED_COUNT];
+
+uint8_t frequencies[FREQUENCIES];
+
+uint8_t colors[FREQUENCIES];
+
+int main() {
+  // Initialize the ESP8266
+  WiFi.begin();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  // Initialize the FastLED library
+  FastLED.setBrightness(128);
+  FastLED.setLeds(leds, LED_COUNT);
+
+  // Initialize the MSGEQ7 chip
+  MSGEQ7 eq(LOW_FREQUENCY, HIGH_FREQUENCY);
+
+  // Set the colors for each frequency
+  for (int i = 0; i < FREQUENCIES; i++) {
+    frequencies[i] = eq.read(i);
+    colors[i] = (frequencies[i] / FREQUENCIES) * 255;
+  }
+
+  // Start the music
+  while (true) {
+    // Update the LED colors
+    for (int i = 0; i < FREQUENCIES; i++) {
+      leds[i] = colors[i];
+      FastLED.update();
+    }
+
+    // Wait for 10 milliseconds
+    delay(10);
+  }
+}
