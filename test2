@@ -1,0 +1,216 @@
+/*
+  Reads MSGEQ7 IC with 7 different frequencies from range 0-255
+  63Hz, 160Hz, 400Hz, 1kHz, 2.5kHz, 6.25KHz, 16kHz
+*/
+
+// FastLED
+#include "FastLED.h"
+
+#define LED_PIN     D1
+#define LED_TYPE    WS2812B
+#define COLOR_ORDER GRB
+#define NUM_LEDS    240 // LED count
+#define BRIGHTNESS  200  // reduce power consumption 1-255
+#define LED_DITHER  255  // try 0 to disable flickering
+#define CORRECTION  TypicalLEDStrip
+#define FRAMES_PER_SECOND 120
+#define COOLING     55
+#define SPARKING    120
+
+CRGB leds[NUM_LEDS]; // Define the array of leds
+
+// MSGEQ7
+#include "MSGEQ7.h"
+
+#define PIN_ANALOG_LEFT A0
+#define PIN_RESET       D3
+#define PIN_STROBE      D2
+#define MSGEQ7_INTERVAL ReadsPerSecond(60)
+#define MSGEQ7_SMOOTH   true
+
+int interval = 10;      // the time we need to wait for fade (fade slower at 30, fade fast at 10).
+int MusicInterval = 15; // the time we need to wait for music (30 seems good) 15 is the limit.
+int GenInterval = 1000; // Gen millis() Global fade/reset.
+unsigned long previousMillis = 0;    // millis() returns an unsigned long.
+unsigned long previousMusicMillis = 0; // music millis() returns an unsigned long.
+unsigned long previousGenMillis = 0; // Gen millis() returns an unsigned long.
+unsigned long previousGen2Millis = 0; // Gen millis() returns an unsigned long.
+
+int length = NUM_LEDS / 4; //7 for all bands 4 for four
+
+int spectrumValue[7];
+int filter = 80;
+int oldB;
+
+int buttonPin = D4;    // momentary push button on pin D4
+int oldButtonVal = 0;
+int nPatterns = 4;
+int lightPattern = 1;
+
+CRGBPalette16 gPal;
+bool gReverseDirection = false;
+
+void setup() {
+  delay(3000);
+  pinMode(PIN_ANALOG_LEFT, INPUT);
+  pinMode(PIN_STROBE, OUTPUT);
+  pinMode(PIN_RESET, OUTPUT);
+  Serial.begin(115200); //serial for debug
+  Serial.println("Startup");
+
+  // FastLED setup
+  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(CORRECTION);
+  FastLED.setBrightness(BRIGHTNESS);
+  FastLED.setDither(LED_DITHER);
+  FastLED.show(); // needed to reset leds to zero
+  
+  pinMode(buttonPin, INPUT);
+  digitalWrite(buttonPin, HIGH);  // button pin is HIGH, so it drops to 0 if pressed
+
+  gPal = CloudColors_p;
+
+  // This will set the IC ready for reading
+  MSGEQ7.begin(PIN_RESET, PIN_STROBE, PIN_ANALOG_LEFT, MSGEQ7_SMOOTH);
+}
+
+uint8_t bHue = 0;
+uint8_t lHue = 0;
+uint8_t mHue = 0;
+uint8_t hHue = 0;
+
+void loop() {
+  // Check if it's time to generate a new pattern
+  unsigned long currentMillis = millis();
+  if ((currentMillis - previousGenMillis) >= GenInterval) {
+    previousGenMillis = currentMillis;
+    
+    // Read the state of the push button
+    int buttonVal = digitalRead(buttonPin);
+    if (buttonVal == LOW && oldButtonVal == HIGH) { // Button has just been pressed
+      lightPattern = (lightPattern + 1) % (nPatterns + 1);
+      if (lightPattern == 0) { // Skip pattern 0
+        lightPattern = 1;
+      }
+      Serial.print("Selected pattern: ");
+      Serial.println(lightPattern);
+    }
+    
+    // Update the button state
+    oldButtonVal = buttonVal;
+    
+    // Generate the next pattern
+    switch (lightPattern) {
+      case 1:
+        Music();
+        break;
+      case 2:
+        Fire();
+        break;
+      case 3:
+        Lights();
+        break;
+      case 4:
+        LightsOUT();
+        break;
+    }
+  }
+  
+  // Fade all LEDs
+  if ((currentMillis - previousFadeMillis) >= FadeInterval) {
+    previousFadeMillis = currentMillis;
+    fadeAll();
+  }
+}
+  void Lights() {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Red;
+  }
+  FastLED.show();
+}
+
+void LightsOUT() {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Black;
+  }
+  FastLED.show();
+}
+
+void Fire() {
+  random16_add_entropy(random());
+  FireAnimation();
+}
+
+void FireAnimation() {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = HeatColor(heat[i]);
+  }
+  // Cool down all leds a little bit
+  for (int i = 0; i < NUM_LEDS; i++) {
+    coolDown(i, random8(0, ((COOLING * 10) / NUM_LEDS) + 2));
+  }
+  // Sparking only occurs on a few leds
+  if (random8() < SPARKING) {
+    int idx = random16(NUM_LEDS);
+    heat[idx] = qadd8(heat[idx], random8(160, 255));
+  }
+  // Move along the led string
+  for (int k = NUM_LEDS - 1; k >= 2; k--) {
+    heat[k] = (heat[k - 1] + heat[k - 2] + heat[k - 2]) / 3;
+  }
+  // Handle edge cases
+  heat[1] = (heat[0] + heat[1] + heat[1]) / 3;
+  heat[0] = (heat[0] + random8(64, 96));
+  FastLED.show();
+  FastLED.delay(1000 / FRAMES_PER_SECOND);
+}
+
+void coolDown(int pixel, byte amount) {
+  if (heat[pixel] > 0) {
+    heat[pixel] = qsub8(heat[pixel], ((amount * 10 + 1) / NUM_LEDS + 1));
+  }
+}
+  
+  void FireWpalette() {
+  for( int i = 0; i < NUM_LEDS; i++) {
+    CRGBPalette16 palette = HeatColors_p;
+    CRGB color = ColorFromPalette(palette, random8(), BRIGHTNESS);
+    leds[i] = color;
+  }
+  FastLED.show();
+}
+
+void Music() {
+  int maxspect = 0;
+  // Read each of the 7 frequencies from the MSGEQ7 IC
+  for (byte i = 0; i < 7; i++) {
+    spectrumValue[i] = MSGEQ7.get(i);
+    if (spectrumValue[i] > maxspect) {
+      maxspect = spectrumValue[i];
+    }
+  }
+  // Map the spectrum values to LED brightness
+  for (byte i = 0; i < 4; i++) {
+    int x = i * length;
+    int y = i * length + length - 1;
+    int b = map(maxspect, 0, filter, 0, BRIGHTNESS);
+    b = constrain(b, 0, BRIGHTNESS);
+    for (int j = x; j <= y; j++) {
+      leds[j] = CHSV(mHue, 255, b);
+    }
+    mHue += 5;
+  }
+  // Show the LED pattern
+  FastLED.show();
+  // Wait before updating the LED pattern again
+  unsigned long currentMillis = millis();
+  if ((unsigned long)(currentMillis - previousMusicMillis) >= MusicInterval) {
+    previousMusicMillis = currentMillis;
+  }
+}
+
+void fadeall() {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i].nscale8(250); // scale down brightness by 1/4
+  }
+  FastLED.show();
+}
