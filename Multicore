@@ -1,0 +1,110 @@
+#include <FastLED.h>
+#include <MSGEQ7.h>
+
+// Define the number of LEDs and the output pin
+#define NUM_LEDS 30
+#define DATA_PIN 2
+
+// Define the pins for the button and the reset line
+#define buttonPin 0
+#define pinReset 15
+
+// Define the time interval for generating patterns in milliseconds
+#define GenInterval 300
+
+// Define the maximum number of patterns
+#define nPatterns 4
+
+// Define the brightness
+#define BRIGHTNESS 150
+
+// Define the number of frames per second for the Fire pattern
+#define FRAMES_PER_SECOND 60
+
+// Define the LED strip
+CRGB leds[NUM_LEDS];
+
+// Define the audio spectrum analyzer
+MSGEQ7 MSGEQ7;
+
+// Define variables for the light pattern and the button state
+int lightPattern = 1;
+int oldButtonVal = HIGH;
+
+// Define variables for generating patterns
+unsigned long previousGenMillis = 0;
+unsigned long previousGen2Millis = 0;
+
+// Define the task function for generating patterns
+void generatePatterns(void *pvParameters) {
+  for (;;) {
+    unsigned long currentMillis = millis();
+    
+    // Read the state of the pushbutton value
+    int buttonVal = digitalRead(buttonPin);
+    
+    MSGEQ7.reset();
+    
+    // Generate patterns at a fixed time interval
+    if ((unsigned long)(currentMillis - previousGenMillis) >= GenInterval) {
+      // Increment the light pattern when the button is pressed
+      if (buttonVal == LOW && oldButtonVal == HIGH) {
+        lightPattern = lightPattern + 1;
+        if (lightPattern > nPatterns) lightPattern = 1;
+        previousGenMillis = currentMillis;
+      }
+      oldButtonVal = buttonVal;
+    }
+    
+    // Call the function for the current light pattern
+    switch (lightPattern) {
+      case 1:
+        Music();
+        break;
+      case 2:
+        Fire();
+        break;
+      case 3:
+        Lights();
+        break;
+      case 4:
+        LightsOUT();
+        break;
+    }
+  }
+}
+
+// Define the task function for fading LEDs
+void fadeLEDs(void *pvParameters) {
+  for (;;) {
+    unsigned long currentMillis = millis();
+    
+    // Fade the LEDs at a fixed time interval
+    if ((unsigned long)(currentMillis - previousGen2Millis) >= GenInterval) {
+      fadeall();
+      previousGen2Millis = currentMillis;
+    }
+  }
+}
+
+void setup() {
+  // Initialize the button pin and the reset pin
+  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(pinReset, OUTPUT);
+  
+  // Initialize the LED strip
+  FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
+  FastLED.setBrightness(BRIGHTNESS);
+  
+  // Start the tasks for generating patterns and fading LEDs
+  xTaskCreatePinnedToCore(generatePatterns, "generatePatterns", 10000, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(fadeLEDs, "fadeLEDs", 10000, NULL, 1, NULL, 1);
+}
+
+void loop() {
+  // The loop function is empty since the tasks are running on separate cores
+}
+
+// Function for the Music pattern
+void Music() {
+  // TODO
